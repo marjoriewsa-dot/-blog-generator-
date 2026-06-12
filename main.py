@@ -5,10 +5,12 @@ import os
 import logging
 
 # Set up logging
-logging.basicConfig(level=logging.INFO, filename='logs/fastapi.log', filemode='a', format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
-app = FastAPI()
-logging.info("FastAPI application has started.")
+
 
 class BlogRequest(BaseModel):
     topic: str
