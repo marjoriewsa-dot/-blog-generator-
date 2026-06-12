@@ -1,3 +1,4 @@
+```python
 from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -11,7 +12,10 @@ from supabase import create_client
 # LOGGING
 # =========================
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 app = FastAPI()
 
@@ -164,7 +168,10 @@ async def generate_blog(topic: str = Form(...)):
             blog_content = result["choices"][0]["message"]["content"]
 
         title = topic.title()
+
         created_at = datetime.now().isoformat()
+
+        summary = blog_content[:200]
 
         # SAVE TO SUPABASE
 
@@ -175,17 +182,27 @@ async def generate_blog(topic: str = Form(...)):
             "created_at": created_at
         }).execute()
 
-        # Send the POST request to the n8n webhook
+        # SEND TO N8N
+
         payload = {
             "title": title,
-            "summary": blog_content[:100],  # Assuming the first 100 characters as a summary
+            "summary": summary,
             "topic": topic,
             "created_at": created_at
         }
+
+        logging.info(f"Payload for webhook: {payload}")
+
         try:
-            async with httpx.AsyncClient() as webhook_client:
-                response = await webhook_client.post(N8N_WEBHOOK_URL, json=payload)
-                response.raise_for_status()  # Raise an error for bad responses
+            async with httpx.AsyncClient(timeout=30.0) as webhook_client:
+
+                webhook_response = await webhook_client.post(
+                    N8N_WEBHOOK_URL,
+                    json=payload
+                )
+
+                webhook_response.raise_for_status()
+
         except Exception as e:
             logging.error(f"Failed to send webhook: {str(e)}")
 
@@ -281,3 +298,4 @@ async def generate_blog(topic: str = Form(...)):
 @app.get("/test")
 async def test():
     return {"message": "Server is running!"}
+```
