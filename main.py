@@ -23,17 +23,20 @@ app = FastAPI()
 # ENV VARIABLES
 # =========================
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
-N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK", "")
+N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
 # =========================
 # SUPABASE
 # =========================
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase = None
+
+if SUPABASE_URL and SUPABASE_KEY:
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # =========================
 # STATIC FOLDER
@@ -54,18 +57,22 @@ async def home():
     posts_html = ""
 
     try:
-        response = supabase.table("blog_posts").select("*").execute()
 
-        posts = response.data
+        if supabase:
 
-        for post in posts:
-            posts_html += f"""
-            <li>
-                <strong>{post['title']}</strong><br>
-                {post['created_at']}
-            </li>
-            <hr>
-            """
+            response = supabase.table("blog_posts").select("*").execute()
+
+            posts = response.data
+
+            for post in posts:
+
+                posts_html += f"""
+                <li>
+                    <strong>{post['title']}</strong><br>
+                    {post['created_at']}
+                </li>
+                <hr>
+                """
 
     except Exception as e:
         logging.error(str(e))
@@ -74,6 +81,7 @@ async def home():
     <html>
 
     <head>
+
         <title>Blog Generator</title>
 
         <style>
@@ -175,12 +183,14 @@ async def generate_blog(topic: str = Form(...)):
 
         # SAVE TO SUPABASE
 
-        supabase.table("blog_posts").insert({
-            "topic": topic,
-            "title": title,
-            "content": blog_content,
-            "created_at": created_at
-        }).execute()
+        if supabase:
+
+            supabase.table("blog_posts").insert({
+                "topic": topic,
+                "title": title,
+                "content": blog_content,
+                "created_at": created_at
+            }).execute()
 
         # SEND TO N8N
 
@@ -191,20 +201,21 @@ async def generate_blog(topic: str = Form(...)):
             "created_at": created_at
         }
 
-        logging.info(f"Payload for webhook: {payload}")
+        if N8N_WEBHOOK_URL:
 
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as webhook_client:
+            try:
 
-                webhook_response = await webhook_client.post(
-                    N8N_WEBHOOK_URL,
-                    json=payload
-                )
+                async with httpx.AsyncClient(timeout=30.0) as webhook_client:
 
-                webhook_response.raise_for_status()
+                    webhook_response = await webhook_client.post(
+                        N8N_WEBHOOK_URL,
+                        json=payload
+                    )
 
-        except Exception as e:
-            logging.error(f"Failed to send webhook: {str(e)}")
+                    webhook_response.raise_for_status()
+
+            except Exception as e:
+                logging.error(f"Failed to send webhook: {str(e)}")
 
         # CREATE HTML FILE
 
@@ -214,6 +225,7 @@ async def generate_blog(topic: str = Form(...)):
 
         html_content = f"""
         <html>
+
             <head>
                 <title>{title}</title>
             </head>
@@ -225,6 +237,7 @@ async def generate_blog(topic: str = Form(...)):
                 <p>{blog_content}</p>
 
             </body>
+
         </html>
         """
 
@@ -233,27 +246,29 @@ async def generate_blog(topic: str = Form(...)):
 
         # SEND TO DISCORD
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        if DISCORD_WEBHOOK:
 
-            with open(html_path, "rb") as file:
+            async with httpx.AsyncClient(timeout=60.0) as client:
 
-                files = {
-                    "file": (
-                        filename,
-                        file,
-                        "text/html"
+                with open(html_path, "rb") as file:
+
+                    files = {
+                        "file": (
+                            filename,
+                            file,
+                            "text/html"
+                        )
+                    }
+
+                    discord_data = {
+                        "content": f"New Blog Post: {title}"
+                    }
+
+                    await client.post(
+                        DISCORD_WEBHOOK,
+                        data=discord_data,
+                        files=files
                     )
-                }
-
-                data = {
-                    "content": f"New Blog Post: {title}"
-                }
-
-                await client.post(
-                    DISCORD_WEBHOOK,
-                    data=data,
-                    files=files
-                )
 
         return f"""
         <html>
