@@ -23,6 +23,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
+N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL")
 
 # =========================
 # SUPABASE
@@ -163,7 +164,6 @@ async def generate_blog(topic: str = Form(...)):
             blog_content = result["choices"][0]["message"]["content"]
 
         title = topic.title()
-
         created_at = datetime.now().isoformat()
 
         # SAVE TO SUPABASE
@@ -174,6 +174,20 @@ async def generate_blog(topic: str = Form(...)):
             "content": blog_content,
             "created_at": created_at
         }).execute()
+
+        # Send the POST request to the n8n webhook
+        payload = {
+            "title": title,
+            "summary": blog_content[:100],  # Assuming the first 100 characters as a summary
+            "topic": topic,
+            "created_at": created_at
+        }
+        try:
+            async with httpx.AsyncClient() as webhook_client:
+                response = await webhook_client.post(N8N_WEBHOOK_URL, json=payload)
+                response.raise_for_status()  # Raise an error for bad responses
+        except Exception as e:
+            logging.error(f"Failed to send webhook: {str(e)}")
 
         # CREATE HTML FILE
 
